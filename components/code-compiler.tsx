@@ -121,7 +121,7 @@ export default function CodeCompiler({
           }),
         }).catch((error) => console.error("Heartbeat error:", error));
       }
-    }, 30000);
+    }, 30000); // 30 seconds
 
     // Announce this client's presence when joining
     const announcePresence = async () => {

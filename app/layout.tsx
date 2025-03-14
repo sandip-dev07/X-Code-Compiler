@@ -4,7 +4,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/toaster";
 
 export const metadata = {
-  title: "Online Code Compiler",
+  title: "X - Code Compiler",
   description: "Compile and run code online with shareable links",
 };
 
