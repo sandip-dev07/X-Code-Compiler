@@ -4,13 +4,23 @@ import prisma from "@/lib/prisma";
 import redis from "@/lib/redis";
 import { pusherServer } from "@/lib/pusher";
 
-
 // Mark this route as dynamic to prevent static generation
-export const dynamic = "force-dynamic"
-export const runtime = "nodejs"
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 // Cache TTL in seconds (1 hour)
 const CACHE_TTL = 60 * 60;
+
+// Define types for session data
+interface SessionData {
+  language: string;
+  code: string;
+  input: string;
+}
+
+interface PendingUpdate extends SessionData {
+  timestamp: number;
+}
 
 // Create a new session
 export async function POST(request: Request) {
@@ -73,7 +83,9 @@ export async function GET(request: Request) {
     }
 
     // Try to get session from Redis cache first
-    let session = await redis.get(`session:${sessionId}`);
+    let session = (await redis.get(
+      `session:${sessionId}`
+    )) as SessionData | null;
 
     // If not in cache, get from MongoDB
     if (!session) {
@@ -121,39 +133,94 @@ export async function PUT(request: Request) {
       );
     }
 
-    // Check if session exists
-    const existingSession = await prisma.session.findUnique({
-      where: { id: sessionId },
-    });
+    // Check if session exists in Redis cache first
+    const cachedSession = (await redis.get(
+      `session:${sessionId}`
+    )) as SessionData | null;
 
-    if (!existingSession) {
-      return NextResponse.json({ error: "Session not found" }, { status: 404 });
+    if (!cachedSession) {
+      // Only check the database if not in cache
+      const existingSession = await prisma.session.findUnique({
+        where: { id: sessionId },
+      });
+
+      if (!existingSession) {
+        return NextResponse.json(
+          { error: "Session not found" },
+          { status: 404 }
+        );
+      }
     }
 
-    // Update the session in MongoDB
-    await prisma.session.update({
-      where: { id: sessionId },
-      data: {
-        language,
-        code,
-        input,
-      },
-    });
+    const pendingUpdateData: PendingUpdate = {
+      language,
+      code,
+      input,
+      timestamp: Date.now(),
+    };
 
-    // Update the cache in Redis
+    // Use debounced updates for database writes
+    // Store pending update in Redis with short TTL
     await redis.set(
-      `session:${sessionId}`,
-      { language, code, input },
-      { ex: CACHE_TTL }
+      `session:${sessionId}:pending`,
+      pendingUpdateData,
+      { ex: 30 } // 30 seconds TTL for pending updates
     );
 
-    // Broadcast the changes to all connected clients
+    // Update the cache in Redis immediately for fast reads
+    const sessionData: SessionData = { language, code, input };
+    await redis.set(`session:${sessionId}`, sessionData, { ex: CACHE_TTL });
+
+    // Broadcast the changes to all connected clients immediately
     await pusherServer.trigger(`session-${sessionId}`, "code-updated", {
       language,
       code,
       input,
       source, // Include the source client ID to prevent echo
     });
+
+    // Use a background worker or scheduled task to process pending updates
+    // This example uses a simple approach without a worker
+    const isPrimaryWrite = await redis.set(
+      `session:${sessionId}:lock`,
+      "1",
+      { ex: 5, nx: true } // 5 second lock, only set if not exists
+    );
+
+    if (isPrimaryWrite) {
+      // This client got the lock, so it will perform the write
+      // Wait a short time to allow for batching of rapid updates
+      setTimeout(async () => {
+        try {
+          // Get the latest pending update
+          const pendingUpdate = (await redis.get(
+            `session:${sessionId}:pending`
+          )) as PendingUpdate | null;
+
+          if (pendingUpdate) {
+            // Write to database only if there's a pending update
+            await prisma.session.update({
+              where: { id: sessionId },
+              data: {
+                language: pendingUpdate.language,
+                code: pendingUpdate.code,
+                input: pendingUpdate.input,
+                updatedAt: new Date(), // Update the timestamp
+              },
+            });
+
+            // Clear the pending update
+            await redis.del(`session:${sessionId}:pending`);
+          }
+
+          // Release the lock (it would expire anyway, but this is cleaner)
+          await redis.del(`session:${sessionId}:lock`);
+        } catch (dbError) {
+          console.error("Background DB update failed:", dbError);
+          // The lock will expire automatically
+        }
+      }, 2000); // Wait 2 seconds to batch updates
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {
