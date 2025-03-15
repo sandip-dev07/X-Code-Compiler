@@ -236,6 +236,8 @@ export default function SimpleCodeEditor({
           ".cm-content": {
             fontFamily: "monospace",
             minHeight: "100%",
+            whiteSpace: "pre-wrap", // Enable line wrapping
+            wordBreak: "break-word", // Break words at any character
           },
           ".cm-scroller": {
             overflow: "auto",
@@ -254,6 +256,10 @@ export default function SimpleCodeEditor({
           },
           ".cm-activeLineGutter": {
             backgroundColor: "transparent",
+          },
+          // Add styles for wrapped lines
+          ".cm-line": {
+            padding: "0 2px",
           },
         }),
       ],

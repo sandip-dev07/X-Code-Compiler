@@ -92,7 +92,9 @@
 
 @layer utilities {
   ::-webkit-scrollbar {
-    width: 5px;
+    background: transparent;
+    width: 6px;
+    height: 6px;
   }
 
   ::-webkit-scrollbar-track {
@@ -101,7 +103,7 @@
 
   ::-webkit-scrollbar-thumb {
     background: #858484;
-    border-radius: 100px;
+    border-radius: 8px;
   }
 
   .code-editor-scroll {

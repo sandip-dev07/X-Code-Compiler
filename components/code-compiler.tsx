@@ -22,12 +22,13 @@ import { languageConfigs } from "@/constants/language-configs";
 import { EditorNavbar } from "./editor-navbar";
 import { OutputPanel } from "./output-panel";
 import { useDebounce } from "@/hooks/use-debounce";
+import { ChevronsLeftRight } from "lucide-react";
 
 const SimpleCodeEditor = dynamic(
   () => import("@/components/codemirror-editor"),
   {
     ssr: false,
-    loading: () => <div className="h-screen bg-slate-800 animate-pulse" />,
+    loading: () => <div className="h-screen bg-zinc-800 animate-pulse" />,
   }
 );
 
@@ -539,7 +540,7 @@ export default function CodeCompiler({
     });
   };
 
-  // Start column resize
+  // Start column resize - Modified to only be triggered by the icon
   const startColResize = (e: React.MouseEvent) => {
     e.preventDefault();
     setIsColResizing(true);
@@ -599,8 +600,7 @@ export default function CodeCompiler({
 
         {/* Column Resize Handle */}
         <div
-          className="w-1 h-full bg-zinc-800 hover:bg-[#73DC8C] cursor-col-resize flex-shrink-0 relative group"
-          onMouseDown={startColResize}
+          className="w-1 h-full bg-zinc-800 relative flex items-center justify-center"
           role="separator"
           aria-orientation="vertical"
           aria-label="Resize code editor"
@@ -616,7 +616,13 @@ export default function CodeCompiler({
             }
           }}
         >
-          <div className="absolute inset-0 w-4 -left-2 group-hover:bg-transparent" />
+          {/* Icon wrapper - only this triggers resize */}
+          <div
+            className="absolute flex items-center justify-center w-5 h-6 -ml-1 cursor-col-resize bg-zinc-700 rounded-sm group z-10"
+            onMouseDown={startColResize}
+          >
+            <ChevronsLeftRight className="w-4 h-4 text-[#73DC8C]" />
+          </div>
         </div>
 
         {/* Right Panel - Output and Input */}
