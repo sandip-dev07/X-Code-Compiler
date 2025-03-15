@@ -98,7 +98,7 @@ export default function SessionPage({ params }: SessionPageProps) {
   }
 
   return (
-    <div className="h-screen w-full flex items-center justify-center bg-gray-500">
+    <div className="h-screen w-full flex items-center justify-center bg-slate-500">
       <CodeCompiler
         initialLanguage={sessionData.language}
         initialCode={sessionData.code}
