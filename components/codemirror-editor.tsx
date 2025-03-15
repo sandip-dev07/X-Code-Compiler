@@ -11,6 +11,12 @@ import {
   // autocompletion,
   completionKeymap,
 } from "@codemirror/autocomplete";
+import prettier from "prettier/standalone";
+import parserBabel from "prettier/parser-babel";
+import parserHtml from "prettier/parser-html";
+import parserCss from "prettier/parser-postcss";
+import parserMarkdown from "prettier/parser-markdown";
+import parserTypescript from "prettier/parser-typescript";
 
 // Import language support
 import { cpp } from "@codemirror/lang-cpp";
@@ -68,6 +74,127 @@ export default function SimpleCodeEditor({
         return cpp(); // Go syntax is somewhat similar to C++
       default:
         return javascript(); // Default fallback
+    }
+  };
+
+  // Format code using Prettier and language-specific formatters
+  const formatCode = async () => {
+    if (!viewRef.current) return;
+
+    const currentCode = viewRef.current.state.doc.toString();
+    let formattedCode = currentCode;
+
+    try {
+      switch (language) {
+        case "javascript":
+          // Format JavaScript with Prettier
+          formattedCode = await prettier.format(currentCode, {
+            parser: "babel",
+            plugins: [parserBabel],
+            printWidth: 80,
+            tabWidth: 2,
+            useTabs: false,
+            semi: true,
+            singleQuote: false,
+            trailingComma: "es5",
+            bracketSpacing: true,
+            arrowParens: "always",
+          });
+          break;
+
+        case "cpp":
+          // Format C++ code using the formatting API
+          formattedCode = await formatWithAPI("cpp", currentCode);
+          break;
+
+        case "python":
+          // Format Python code using the formatting API
+          formattedCode = await formatWithAPI("python", currentCode);
+          break;
+
+        case "java":
+          // Format Java code using the formatting API
+          formattedCode = await formatWithAPI("java", currentCode);
+          break;
+
+        default:
+          // Try to use Prettier for other languages if possible
+          try {
+            let parser;
+            if (language === "typescript" || language === "tsx") {
+              parser = "typescript";
+            } else if (language === "html") {
+              parser = "html";
+            } else if (language === "css") {
+              parser = "css";
+            } else if (language === "markdown") {
+              parser = "markdown";
+            } else {
+              parser = "babel"; // Default
+            }
+
+            formattedCode = await prettier.format(currentCode, {
+              parser: "babel",
+              plugins: [parserBabel],
+              printWidth: 80,
+              tabWidth: 2,
+              useTabs: false,
+              semi: true,
+              singleQuote: false,
+              trailingComma: "es5",
+              bracketSpacing: true,
+              arrowParens: "always",
+            });
+          } catch (error) {
+            console.warn(`Formatting not supported for ${language}`);
+          }
+          break;
+      }
+
+      // Update the editor content if formatting was successful
+      if (formattedCode !== currentCode) {
+        viewRef.current.dispatch({
+          changes: {
+            from: 0,
+            to: currentCode.length,
+            insert: formattedCode,
+          },
+        });
+
+        // Notify parent component of the change
+        onChange(formattedCode);
+      }
+    } catch (error) {
+      console.error("Error formatting code:", error);
+    }
+  };
+
+  // Format code using a server-side API for languages not supported by Prettier
+  const formatWithAPI = async (
+    language: string,
+    code: string
+  ): Promise<string> => {
+    try {
+      const response = await fetch("/api/format", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          language,
+          code,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data.formattedCode || code;
+    } catch (error) {
+      console.error(`Error formatting ${language} code:`, error);
+      return code; // Return original code if formatting fails
     }
   };
 
@@ -204,6 +331,14 @@ export default function SimpleCodeEditor({
           ...closeBracketsKeymap,
           ...completionKeymap,
           indentWithTab,
+          // Add keyboard shortcut for formatting
+          {
+            key: "Alt-Shift-f",
+            run: () => {
+              formatCode();
+              return true;
+            },
+          },
         ]),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
