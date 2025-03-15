@@ -7,7 +7,10 @@ import { EditorView, keymap } from "@codemirror/view";
 import { defaultKeymap, indentWithTab } from "@codemirror/commands";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
-import { autocompletion, completionKeymap } from "@codemirror/autocomplete";
+import {
+  // autocompletion,
+  completionKeymap,
+} from "@codemirror/autocomplete";
 
 // Import language support
 import { cpp } from "@codemirror/lang-cpp";
@@ -181,21 +184,21 @@ export default function SimpleCodeEditor({
         languageSupport,
         oneDark,
         closeBrackets(),
-        autocompletion({
-          override: [
-            (context) => {
-              const word = context.matchBefore(/\w*/);
-              if (!word) return null;
+        // autocompletion({
+        //   override: [
+        //     (context) => {
+        //       const word = context.matchBefore(/\w*/);
+        //       if (!word) return null;
 
-              return {
-                from: word.from,
-                options: suggestions.filter((opt) =>
-                  opt.label.toLowerCase().startsWith(word.text.toLowerCase())
-                ),
-              };
-            },
-          ],
-        }),
+        //       return {
+        //         from: word.from,
+        //         options: suggestions.filter((opt) =>
+        //           opt.label.toLowerCase().startsWith(word.text.toLowerCase())
+        //         ),
+        //       };
+        //     },
+        //   ],
+        // }),
         keymap.of([
           ...defaultKeymap,
           ...closeBracketsKeymap,
