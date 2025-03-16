@@ -1,9 +1,7 @@
-// pusher.ts
-import PusherServer from "pusher";
+import Pusher from "pusher";
 import PusherClient from "pusher-js";
 
-// Server-side Pusher instance
-export const pusherServer = new PusherServer({
+export const pusherServer = new Pusher({
   appId: process.env.PUSHER_APP_ID!,
   key: process.env.NEXT_PUBLIC_PUSHER_APP_KEY!,
   secret: process.env.PUSHER_APP_SECRET!,
@@ -11,10 +9,15 @@ export const pusherServer = new PusherServer({
   useTLS: true,
 });
 
-// Client-side Pusher instance
 export const pusherClient = new PusherClient(
   process.env.NEXT_PUBLIC_PUSHER_APP_KEY!,
   {
     cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER!,
+    authEndpoint: "/api/pusher/auth",
+    forceTLS: true,
   }
 );
+
+// The line below is causing the TypeScript error and is redundant
+// since we already set authEndpoint in the constructor above
+// pusherClient.config.authEndpoint = "/api/pusher/auth"

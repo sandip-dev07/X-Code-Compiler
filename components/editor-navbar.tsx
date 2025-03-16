@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { languageIcons } from "@/constants/language-icons";
 import type { RefObject } from "react";
+import { VoiceChat } from "./voice-chat";
 
 interface EditorNavbarProps {
   language: string;
@@ -59,6 +60,7 @@ export function EditorNavbar({
   isUpdating,
   connectedUsers,
   sessionId,
+  clientId,
   fileInputRef,
   handleLanguageChange,
   resetCode,
@@ -223,9 +225,7 @@ export function EditorNavbar({
                   {isConnected
                     ? isUpdating
                       ? "Code updated by another user"
-                      : `${connectedUsers} user${
-                          connectedUsers !== 1 ? "s" : ""
-                        } connected`
+                      : `${connectedUsers} user${connectedUsers !== 1 ? "s" : ""} connected`
                     : "Real-time sync disconnected"}
                 </p>
               </TooltipContent>
@@ -238,6 +238,9 @@ export function EditorNavbar({
         )}
       </div>
       <div className="flex items-center space-x-2">
+        {/* Voice Chat Component - Add it here */}
+        {sessionId && <VoiceChat sessionId={sessionId} clientId={clientId} />}
+
         <TooltipProvider delayDuration={0}>
           <Tooltip>
             <TooltipTrigger asChild>
