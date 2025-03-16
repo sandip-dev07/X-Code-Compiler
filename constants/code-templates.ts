@@ -1,9 +1,12 @@
 export const codeTemplates = {
   cpp: `#include <iostream>
+  #include <bits/stdc++.h>
+
+using namespace std;
 
 int main() {
   // Write C++ code here
-  std::cout << "Welcome to Online Code Compiler!!";
+  cout << "Welcome to Online Code Compiler!!";
   return 0;
 }`,
   javascript: `// Write JavaScript code here
