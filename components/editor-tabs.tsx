@@ -9,7 +9,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { languageConfigs } from "@/constants/language-configs";
 import { languageIcons } from "@/constants/language-icons";
 
 export interface TabFile {
