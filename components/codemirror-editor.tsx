@@ -24,6 +24,7 @@ import { linter, Diagnostic } from "@codemirror/lint";
 import { Text } from "@codemirror/state";
 import prettier from "prettier/standalone";
 import parserBabel from "prettier/parser-babel";
+import { indentUnit } from "@codemirror/language";
 
 // Import language support
 import { cpp } from "@codemirror/lang-cpp";
@@ -1119,6 +1120,9 @@ export default function SimpleCodeEditor({
         languageSupport,
         oneDark,
         closeBrackets(),
+        // Add indentation configuration
+        EditorState.tabSize.of(language === "python" ? 4 : 2),
+        indentUnit.of(language === "python" ? "    " : "  "),
         autocompletion({
           override: [
             // Custom completion for declared symbols
