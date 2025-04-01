@@ -25,6 +25,7 @@ import { Text } from "@codemirror/state";
 import prettier from "prettier/standalone";
 import parserBabel from "prettier/parser-babel";
 import { indentUnit } from "@codemirror/language";
+import { StateEffect } from "@codemirror/state";
 
 // Import language support
 import { cpp } from "@codemirror/lang-cpp";
@@ -1136,39 +1137,32 @@ export default function SimpleCodeEditor({
               const line = context.state.doc.lineAt(context.pos);
               const beforeCursor = line.text.slice(0, context.pos - line.from);
               
-              // Don't show suggestions if:
-              // 1. We're at the start of a line
-              // 2. We're after a semicolon
-              // 3. We're in a comment
-              // 4. We're in a string
-              // 5. We're after an operator
-              if (
-                context.pos === line.from || // Start of line
-                beforeCursor.endsWith(";") || // After semicolon
-                beforeCursor.endsWith("//") || // In comment
-                beforeCursor.match(/["'].*$/) || // In string
-                beforeCursor.match(/[+\-*/%&|^=<>!~]$/) // After operator
-              ) {
-                return null;
-              }
-
-              // Get the current word being typed
-              const currentWord = word.text.toLowerCase();
+              // Show suggestions for:
+              // 1. Import/include statements
+              // 2. Variable names
+              // 3. Function names
+              // 4. Class names
+              const isImportInclude = beforeCursor.match(/^(import|include)\s*$/);
+              const isVariableStart = beforeCursor.match(/^[a-zA-Z_$][a-zA-Z0-9_$]*$/);
+              
+              // Get language-specific suggestions
+              const suggestions = getLanguageSuggestions(language);
               
               // Filter suggestions based on context
               const filteredSuggestions = suggestions.filter((opt) => {
                 const label = opt.label.toLowerCase();
                 
-                // Don't show suggestions that:
-                // 1. Are shorter than the current word
-                // 2. Don't start with the current word
-                // 3. Are operators or special characters
-                if (
-                  label.length < currentWord.length ||
-                  !label.startsWith(currentWord) ||
-                  /^[+\-*/%&|^=<>!~]$/.test(label)
-                ) {
-                  return false;
+                // For import/include statements
+                if (isImportInclude) {
+                  return label.startsWith('from') || 
+                         label.startsWith('import') || 
+                         label.startsWith('#include') ||
+                         label.startsWith('using');
+                }
+                
+                // For variable/function/class names
+                if (isVariableStart) {
+                  return label.startsWith(word.text.toLowerCase());
                 }
                 
                 return true;
@@ -1339,6 +1333,43 @@ export default function SimpleCodeEditor({
                 },
               });
               return true;
+            },
+          },
+          // Add keyboard shortcut for manual completion trigger
+          {
+            key: "Ctrl-Space",
+            run: (view) => {
+              const pos = view.state.selection.main.head;
+              const line = view.state.doc.lineAt(pos);
+              const beforeCursor = line.text.slice(0, pos - line.from);
+              
+              if (beforeCursor.match(/^(import|include)\s*$/) || 
+                  beforeCursor.match(/^[a-zA-Z_$][a-zA-Z0-9_$]*$/)) {
+                // Trigger completion using the correct API
+                view.dispatch({
+                  effects: [
+                    StateEffect.appendConfig.of([
+                      autocompletion({
+                        maxRenderedOptions: 10,
+                        override: [
+                          symbolCompletions,
+                          (context) => {
+                            const word = context.matchBefore(/\w*/);
+                            if (!word) return null;
+                            return {
+                              from: word.from,
+                              options: getLanguageSuggestions(language),
+                              span: /^\w*$/,
+                            };
+                          },
+                        ],
+                      }),
+                    ]),
+                  ],
+                });
+                return true;
+              }
+              return false;
             },
           },
         ]),
