@@ -1132,11 +1132,51 @@ export default function SimpleCodeEditor({
               const word = context.matchBefore(/\w*/);
               if (!word) return null;
 
+              // Get the current line and position
+              const line = context.state.doc.lineAt(context.pos);
+              const beforeCursor = line.text.slice(0, context.pos - line.from);
+              
+              // Don't show suggestions if:
+              // 1. We're at the start of a line
+              // 2. We're after a semicolon
+              // 3. We're in a comment
+              // 4. We're in a string
+              // 5. We're after an operator
+              if (
+                context.pos === line.from || // Start of line
+                beforeCursor.endsWith(";") || // After semicolon
+                beforeCursor.endsWith("//") || // In comment
+                beforeCursor.match(/["'].*$/) || // In string
+                beforeCursor.match(/[+\-*/%&|^=<>!~]$/) // After operator
+              ) {
+                return null;
+              }
+
+              // Get the current word being typed
+              const currentWord = word.text.toLowerCase();
+              
+              // Filter suggestions based on context
+              const filteredSuggestions = suggestions.filter((opt) => {
+                const label = opt.label.toLowerCase();
+                
+                // Don't show suggestions that:
+                // 1. Are shorter than the current word
+                // 2. Don't start with the current word
+                // 3. Are operators or special characters
+                if (
+                  label.length < currentWord.length ||
+                  !label.startsWith(currentWord) ||
+                  /^[+\-*/%&|^=<>!~]$/.test(label)
+                ) {
+                  return false;
+                }
+                
+                return true;
+              });
+
               return {
                 from: word.from,
-                options: suggestions.filter((opt) =>
-                  opt.label.toLowerCase().startsWith(word.text.toLowerCase())
-                ),
+                options: filteredSuggestions,
                 span: /^\w*$/,
               };
             },
