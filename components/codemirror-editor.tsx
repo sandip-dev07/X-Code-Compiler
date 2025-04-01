@@ -10,8 +10,13 @@ import {
   ViewPlugin,
   ViewUpdate,
   DecorationSet,
+  drawSelection,
+  highlightActiveLine,
+  highlightActiveLineGutter,
+  rectangularSelection,
+  crosshairCursor,
 } from "@codemirror/view";
-import { defaultKeymap, indentWithTab } from "@codemirror/commands";
+import { defaultKeymap, indentWithTab, history, historyKeymap } from "@codemirror/commands";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 import {
@@ -24,7 +29,8 @@ import { linter, Diagnostic } from "@codemirror/lint";
 import { Text } from "@codemirror/state";
 import prettier from "prettier/standalone";
 import parserBabel from "prettier/parser-babel";
-import { indentUnit } from "@codemirror/language";
+import { indentUnit, bracketMatching, foldGutter, foldKeymap } from "@codemirror/language";
+import { search, searchKeymap } from "@codemirror/search";
 
 // Import language support
 import { cpp } from "@codemirror/lang-cpp";
@@ -1119,40 +1125,58 @@ export default function SimpleCodeEditor({
         basicSetup,
         languageSupport,
         oneDark,
-        closeBrackets(),
-        // Add indentation configuration
-        EditorState.tabSize.of(language === "python" ? 4 : 2),
-        indentUnit.of(language === "python" ? "    " : "  "),
-        autocompletion({
-          override: [
-            // Custom completion for declared symbols
-            symbolCompletions,
-            // Language-specific suggestions
-            (context) => {
-              const word = context.matchBefore(/\w*/);
-              if (!word) return null;
+        // Editor features
+        [
+          closeBrackets(),
+          EditorState.tabSize.of(language === "python" ? 4 : 2),
+          indentUnit.of(language === "python" ? "    " : "  "),
+          bracketMatching(),
+          highlightActiveLine(),
+          highlightActiveLineGutter(),
+          rectangularSelection(),
+          crosshairCursor(),
+          history(),
+          drawSelection(),
+          foldGutter(),
+          search(),
+          autocompletion({
+            override: [
+              symbolCompletions,
+              (context) => {
+                const word = context.matchBefore(/\w*/);
+                if (!word) return null;
 
-              return {
-                from: word.from,
-                options: suggestions.filter((opt) =>
-                  opt.label.toLowerCase().startsWith(word.text.toLowerCase())
-                ),
-              };
-            },
-          ],
-        }),
-        // Add linter for duplicate variables
-        symbolLinter,
-        // Add decoration for highlighting duplicates
-        duplicateHighlighter,
-        // Add decoration for highlighting symbol references
-        symbolReferenceHighlighter,
+                return {
+                  from: word.from,
+                  options: suggestions.filter((opt) =>
+                    opt.label.toLowerCase().startsWith(word.text.toLowerCase())
+                  ),
+                };
+              },
+            ],
+          }),
+          symbolLinter,
+          duplicateHighlighter,
+          symbolReferenceHighlighter,
+        ],
+        // Keymaps
         keymap.of([
           ...defaultKeymap,
           ...closeBracketsKeymap,
           ...completionKeymap,
+          ...historyKeymap,
+          ...foldKeymap,
+          ...searchKeymap,
           indentWithTab,
-          // Add keyboard shortcut for formatting
+          // Format document
+          {
+            key: "Ctrl-Shift-i",
+            run: () => {
+              formatCode();
+              return true;
+            },
+          },
+          // Format document (Alt-Shift-F alternative)
           {
             key: "Alt-Shift-f",
             run: () => {
@@ -1160,7 +1184,144 @@ export default function SimpleCodeEditor({
               return true;
             },
           },
+          // Save
+          {
+            key: "Ctrl-s",
+            run: () => {
+              // You can add save functionality here
+              return true;
+            },
+          },
+          // Comment/uncomment lines
+          {
+            key: "Ctrl-/",
+            run: (view) => {
+              const selection = view.state.selection.main;
+              const doc = view.state.doc;
+              const line = doc.lineAt(selection.from);
+              const isCommented = line.text.trimStart().startsWith("//");
+              
+              view.dispatch({
+                changes: {
+                  from: line.from,
+                  to: line.to,
+                  insert: isCommented 
+                    ? line.text.replace(/\/\/\s?/, '')
+                    : "// " + line.text
+                }
+              });
+              return true;
+            },
+          },
         ]),
+        EditorView.theme({
+          "&": {
+            height: "100%",
+            fontSize: "14px",
+          },
+          ".cm-content": {
+            fontFamily: "'Consolas', 'Menlo', 'Monaco', 'Courier New', monospace",
+            minHeight: "100%",
+            padding: "4px 0",
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+            caretColor: "#fff",
+            lineHeight: "1.5",
+          },
+          ".cm-line": {
+            padding: "0 8px",
+            lineHeight: "1.6",
+          },
+          ".cm-matchingBracket": {
+            backgroundColor: "rgba(255, 255, 255, 0.1)",
+            outline: "1px solid rgba(255, 255, 255, 0.3)",
+          },
+          ".cm-nonmatchingBracket": {
+            backgroundColor: "rgba(255, 0, 0, 0.2)",
+            outline: "1px solid rgba(255, 0, 0, 0.4)",
+          },
+          ".cm-selectionMatch": {
+            backgroundColor: "rgba(255, 255, 255, 0.1)",
+          },
+          ".cm-cursor": {
+            borderLeft: "2px solid #fff",
+          },
+          ".cm-selectionBackground": {
+            background: "rgba(255, 255, 255, 0.1) !important",
+          },
+          ".cm-tooltip": {
+            backgroundColor: "#252526",
+            border: "1px solid #454545",
+            borderRadius: "3px",
+          },
+          ".cm-tooltip.cm-tooltip-autocomplete": {
+            "& > ul > li": {
+              padding: "4px 8px",
+            },
+            "& > ul > li[aria-selected]": {
+              background: "#04395E",
+              color: "#fff",
+            },
+          },
+          ".cm-scroller": {
+            overflow: "auto",
+            fontFamily: "'Consolas', 'Menlo', 'Monaco', 'Courier New', monospace",
+            lineHeight: "1.6",
+          },
+          ".cm-gutters": {
+            backgroundColor: "#1e1e1e",
+            border: "none",
+            borderRight: "1px solid #404040",
+            userSelect: "none",
+            paddingRight: "4px",
+          },
+          ".cm-gutter": {
+            minWidth: "40px",
+          },
+          ".cm-gutterElement": {
+            padding: "0 4px 0 8px",
+            color: "#858585",
+          },
+          ".cm-activeLineGutter": {
+            backgroundColor: "transparent",
+            color: "#c6c6c6",
+          },
+          ".cm-activeLine": {
+            backgroundColor: "rgba(255, 255, 255, 0.03)",
+          },
+          ".cm-foldPlaceholder": {
+            backgroundColor: "#2d2d2d",
+            border: "none",
+            color: "#dcdcdc",
+          },
+          "&.cm-focused .cm-selectionBackground": {
+            background: "rgba(255, 255, 255, 0.1) !important",
+          },
+          ".cm-foldGutter": {
+            width: "14px",
+            fontSize: "10px",
+          },
+          ".cm-foldGutter .cm-gutterElement": {
+            padding: "0 2px",
+            color: "#676767",
+          },
+          "&.cm-editor": {
+            height: "100%",
+            overflow: "hidden",
+          },
+          // Style for duplicate variable highlights
+          ".cm-duplicate-variable": {
+            backgroundColor: "rgba(255, 0, 0, 0.2)",
+            textDecoration: "wavy underline #ff6464",
+          },
+          // Style for symbol reference highlights
+          ".cm-symbol-reference": {
+            backgroundColor: "rgba(65, 105, 225, 0.2)",
+            outline: "1px solid rgba(65, 105, 225, 0.5)",
+          },
+        }),
+        // Add line numbers and fold gutters
+        EditorView.lineWrapping,
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
             onChange(update.state.doc.toString());
@@ -1183,50 +1344,6 @@ export default function SimpleCodeEditor({
               });
             }
           }
-        }),
-        EditorView.theme({
-          "&": {
-            height: "100%",
-            fontSize: "14px",
-          },
-          ".cm-content": {
-            fontFamily: "monospace",
-            minHeight: "100%",
-            whiteSpace: "pre-wrap", // Enable line wrapping
-            wordBreak: "break-word", // Break words at any character
-          },
-          ".cm-scroller": {
-            overflow: "auto",
-            maxHeight: "100%",
-          },
-          "&.cm-editor": {
-            height: "100%",
-            overflow: "hidden",
-          },
-          ".cm-gutters": {
-            backgroundColor: "transparent",
-            border: "none",
-          },
-          ".cm-gutter": {
-            minWidth: "32px",
-          },
-          ".cm-activeLineGutter": {
-            backgroundColor: "transparent",
-          },
-          // Add styles for wrapped lines
-          ".cm-line": {
-            padding: "0 2px",
-          },
-          // Style for duplicate variable highlights
-          ".cm-duplicate-variable": {
-            backgroundColor: "rgba(255, 0, 0, 0.2)",
-            textDecoration: "wavy underline red",
-          },
-          // Style for symbol reference highlights
-          ".cm-symbol-reference": {
-            backgroundColor: "rgba(65, 105, 225, 0.2)",
-            outline: "1px solid rgba(65, 105, 225, 0.5)",
-          },
         }),
       ],
     });
