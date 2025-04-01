@@ -33,33 +33,90 @@ export async function POST(request: Request) {
   }
 }
 
-// C++ formatter - Basic implementation
+// C++ formatter - Enhanced implementation
 function formatCpp(code: string): string {
-  // This is a simplified formatter for C++
-  // In a production environment, you would use a proper C++ formatter like clang-format
-
   const lines = code.split("\n");
   const formattedLines: string[] = [];
   let indentLevel = 0;
+  let inNamespace = false;
+  let inClass = false;
+  let inFunction = false;
+  let inIfBlock = false;
+  let inElseBlock = false;
+  let inForLoop = false;
+  let inWhileLoop = false;
+  let inSwitchBlock = false;
+  let inCaseBlock = false;
 
   for (const line of lines) {
-    // Trim whitespace
     const trimmedLine = line.trim();
+    let currentIndent = indentLevel;
 
-    // Decrease indent for closing braces
-    if (trimmedLine.startsWith("}") || trimmedLine.startsWith(")")) {
-      indentLevel = Math.max(0, indentLevel - 1);
+    // Handle special cases for indentation
+    if (trimmedLine.startsWith("}")) {
+      // Decrease indent for closing braces
+      currentIndent = Math.max(0, indentLevel - 1);
+      if (trimmedLine === "}") {
+        // Reset block flags when closing a block
+        inNamespace = false;
+        inClass = false;
+        inFunction = false;
+        inIfBlock = false;
+        inElseBlock = false;
+        inForLoop = false;
+        inWhileLoop = false;
+        inSwitchBlock = false;
+        inCaseBlock = false;
+      }
     }
 
     // Add proper indentation
     if (trimmedLine.length > 0) {
-      formattedLines.push("  ".repeat(indentLevel) + trimmedLine);
+      // Add extra indentation for namespace content
+      if (inNamespace) {
+        currentIndent++;
+      }
+      // Add extra indentation for class content
+      if (inClass) {
+        currentIndent++;
+      }
+      // Add extra indentation for function content
+      if (inFunction) {
+        currentIndent++;
+      }
+      // Add extra indentation for control structures
+      if (inIfBlock || inElseBlock || inForLoop || inWhileLoop || inSwitchBlock || inCaseBlock) {
+        currentIndent++;
+      }
+
+      formattedLines.push("  ".repeat(currentIndent) + trimmedLine);
     } else {
       formattedLines.push("");
     }
 
-    // Increase indent for opening braces
-    if (trimmedLine.endsWith("{") || trimmedLine.endsWith("(")) {
+    // Update block flags
+    if (trimmedLine.includes("namespace")) {
+      inNamespace = true;
+    } else if (trimmedLine.includes("class")) {
+      inClass = true;
+    } else if (trimmedLine.includes("(") && trimmedLine.includes(")")) {
+      inFunction = true;
+    } else if (trimmedLine.startsWith("if")) {
+      inIfBlock = true;
+    } else if (trimmedLine.startsWith("else")) {
+      inElseBlock = true;
+    } else if (trimmedLine.startsWith("for")) {
+      inForLoop = true;
+    } else if (trimmedLine.startsWith("while")) {
+      inWhileLoop = true;
+    } else if (trimmedLine.startsWith("switch")) {
+      inSwitchBlock = true;
+    } else if (trimmedLine.startsWith("case")) {
+      inCaseBlock = true;
+    }
+
+    // Update indent level for next line
+    if (trimmedLine.endsWith("{")) {
       indentLevel++;
     }
   }
@@ -67,20 +124,27 @@ function formatCpp(code: string): string {
   return formattedLines.join("\n");
 }
 
-// Python formatter - Basic implementation
+// Python formatter - Enhanced implementation
 function formatPython(code: string): string {
-  // This is a simplified formatter for Python
-  // In a production environment, you would use a proper Python formatter like black or autopep8
-
   const lines = code.split("\n");
   const formattedLines: string[] = [];
   let indentLevel = 0;
+  let inFunction = false;
+  let inClass = false;
+  let inIfBlock = false;
+  let inElseBlock = false;
+  let inElifBlock = false;
+  let inForLoop = false;
+  let inWhileLoop = false;
+  let inTryBlock = false;
+  let inExceptBlock = false;
+  let inFinallyBlock = false;
 
   for (const line of lines) {
-    // Trim whitespace
     const trimmedLine = line.trim();
+    let currentIndent = indentLevel;
 
-    // Decrease indent for certain keywords
+    // Handle special cases for indentation
     if (
       trimmedLine.startsWith("else:") ||
       trimmedLine.startsWith("elif ") ||
@@ -88,17 +152,60 @@ function formatPython(code: string): string {
       trimmedLine.startsWith("except ") ||
       trimmedLine.startsWith("finally:")
     ) {
-      indentLevel = Math.max(0, indentLevel - 1);
+      currentIndent = Math.max(0, indentLevel - 1);
+      // Reset block flags
+      inIfBlock = false;
+      inElseBlock = false;
+      inElifBlock = false;
+      inTryBlock = false;
+      inExceptBlock = false;
+      inFinallyBlock = false;
     }
 
     // Add proper indentation
     if (trimmedLine.length > 0) {
-      formattedLines.push("    ".repeat(indentLevel) + trimmedLine);
+      // Add extra indentation for class content
+      if (inClass) {
+        currentIndent++;
+      }
+      // Add extra indentation for function content
+      if (inFunction) {
+        currentIndent++;
+      }
+      // Add extra indentation for control structures
+      if (inIfBlock || inElseBlock || inElifBlock || inForLoop || inWhileLoop || inTryBlock || inExceptBlock || inFinallyBlock) {
+        currentIndent++;
+      }
+
+      formattedLines.push("    ".repeat(currentIndent) + trimmedLine);
     } else {
       formattedLines.push("");
     }
 
-    // Increase indent for lines ending with colon
+    // Update block flags
+    if (trimmedLine.startsWith("class ")) {
+      inClass = true;
+    } else if (trimmedLine.startsWith("def ")) {
+      inFunction = true;
+    } else if (trimmedLine.startsWith("if ")) {
+      inIfBlock = true;
+    } else if (trimmedLine.startsWith("else:")) {
+      inElseBlock = true;
+    } else if (trimmedLine.startsWith("elif ")) {
+      inElifBlock = true;
+    } else if (trimmedLine.startsWith("for ")) {
+      inForLoop = true;
+    } else if (trimmedLine.startsWith("while ")) {
+      inWhileLoop = true;
+    } else if (trimmedLine.startsWith("try:")) {
+      inTryBlock = true;
+    } else if (trimmedLine.startsWith("except")) {
+      inExceptBlock = true;
+    } else if (trimmedLine.startsWith("finally:")) {
+      inFinallyBlock = true;
+    }
+
+    // Update indent level for next line
     if (trimmedLine.endsWith(":")) {
       indentLevel++;
     }
@@ -107,32 +214,90 @@ function formatPython(code: string): string {
   return formattedLines.join("\n");
 }
 
-// Java formatter - Basic implementation
+// Java formatter - Enhanced implementation
 function formatJava(code: string): string {
-  // This is a simplified formatter for Java
-  // In a production environment, you would use a proper Java formatter
-
   const lines = code.split("\n");
   const formattedLines: string[] = [];
   let indentLevel = 0;
+  let inClass = false;
+  let inMethod = false;
+  let inIfBlock = false;
+  let inElseBlock = false;
+  let inForLoop = false;
+  let inWhileLoop = false;
+  let inSwitchBlock = false;
+  let inCaseBlock = false;
+  let inTryBlock = false;
+  let inCatchBlock = false;
+  let inFinallyBlock = false;
 
   for (const line of lines) {
-    // Trim whitespace
     const trimmedLine = line.trim();
+    let currentIndent = indentLevel;
 
-    // Decrease indent for closing braces
+    // Handle special cases for indentation
     if (trimmedLine.startsWith("}")) {
-      indentLevel = Math.max(0, indentLevel - 1);
+      currentIndent = Math.max(0, indentLevel - 1);
+      // Reset block flags
+      inClass = false;
+      inMethod = false;
+      inIfBlock = false;
+      inElseBlock = false;
+      inForLoop = false;
+      inWhileLoop = false;
+      inSwitchBlock = false;
+      inCaseBlock = false;
+      inTryBlock = false;
+      inCatchBlock = false;
+      inFinallyBlock = false;
     }
 
     // Add proper indentation
     if (trimmedLine.length > 0) {
-      formattedLines.push("    ".repeat(indentLevel) + trimmedLine);
+      // Add extra indentation for class content
+      if (inClass) {
+        currentIndent++;
+      }
+      // Add extra indentation for method content
+      if (inMethod) {
+        currentIndent++;
+      }
+      // Add extra indentation for control structures
+      if (inIfBlock || inElseBlock || inForLoop || inWhileLoop || inSwitchBlock || inCaseBlock || inTryBlock || inCatchBlock || inFinallyBlock) {
+        currentIndent++;
+      }
+
+      formattedLines.push("    ".repeat(currentIndent) + trimmedLine);
     } else {
       formattedLines.push("");
     }
 
-    // Increase indent for opening braces
+    // Update block flags
+    if (trimmedLine.startsWith("class ")) {
+      inClass = true;
+    } else if (trimmedLine.includes("(") && trimmedLine.includes(")")) {
+      inMethod = true;
+    } else if (trimmedLine.startsWith("if ")) {
+      inIfBlock = true;
+    } else if (trimmedLine.startsWith("else ")) {
+      inElseBlock = true;
+    } else if (trimmedLine.startsWith("for ")) {
+      inForLoop = true;
+    } else if (trimmedLine.startsWith("while ")) {
+      inWhileLoop = true;
+    } else if (trimmedLine.startsWith("switch ")) {
+      inSwitchBlock = true;
+    } else if (trimmedLine.startsWith("case ")) {
+      inCaseBlock = true;
+    } else if (trimmedLine.startsWith("try ")) {
+      inTryBlock = true;
+    } else if (trimmedLine.startsWith("catch ")) {
+      inCatchBlock = true;
+    } else if (trimmedLine.startsWith("finally ")) {
+      inFinallyBlock = true;
+    }
+
+    // Update indent level for next line
     if (trimmedLine.endsWith("{")) {
       indentLevel++;
     }
