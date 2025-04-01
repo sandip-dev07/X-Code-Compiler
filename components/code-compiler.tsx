@@ -555,7 +555,7 @@ export default function CodeCompiler({
   return (
     <div
       ref={containerRef}
-      className="h-[99%] w-[99.5%] bg-black text-white overflow-hidden rounded-md"
+      className="h-full w-full bg-black text-white overflow-hidden rounded-md"
     >
       <div className="flex h-full" style={{ flexWrap: "nowrap" }}>
         {/* Left Panel - Code Editor */}
