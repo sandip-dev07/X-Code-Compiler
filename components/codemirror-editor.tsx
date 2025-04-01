@@ -1137,6 +1137,17 @@ export default function SimpleCodeEditor({
               const line = context.state.doc.lineAt(context.pos);
               const beforeCursor = line.text.slice(0, context.pos - line.from);
               
+              // Don't show suggestions if:
+              // 1. After semicolon
+              // 2. After operators
+              // 3. After closing brackets
+              // 4. After commas
+              // 5. After any non-word character
+              const lastChar = beforeCursor[beforeCursor.length - 1];
+              if (lastChar && /[;+\-*/=<>!&|^%.,()\[\]{}]/.test(lastChar)) {
+                return null;
+              }
+              
               // Show suggestions for:
               // 1. Import/include statements
               // 2. Variable names
