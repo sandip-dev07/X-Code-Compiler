@@ -39,64 +39,6 @@ interface CodeCompilerProps {
   sessionId?: string;
 }
 
-// Add these constants at the top of the file
-const API_ENDPOINTS = {
-  COMPILE: '/api/compile',
-  SESSIONS: '/api/sessions',
-  PRESENCE: '/api/sessions/presence',
-} as const;
-
-const HEARTBEAT_INTERVAL = 30000; // 30 seconds
-const UPDATE_ANIMATION_DURATION = 2000; // 2 seconds
-const DEBOUNCE_DELAY = 1000; // 1 second
-
-// Add these interfaces for API responses
-interface CompileResponse {
-  compile_error?: string;
-  run_error?: string;
-  output?: string;
-}
-
-interface CodeUpdateData {
-  source: string;
-  language: string;
-  code: string;
-  input: string;
-}
-
-interface PresenceUpdateData {
-  count: number;
-}
-
-// Add these utility functions
-const makeApiRequest = async <T,>(
-  endpoint: string,
-  options: RequestInit = {}
-): Promise<T> => {
-  const response = await fetch(endpoint, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
-  }
-
-  return response.json();
-};
-
-const handleApiError = (error: unknown, toast: any) => {
-  console.error('API Error:', error);
-  toast({
-    title: 'Error',
-    description: error instanceof Error ? error.message : 'An unknown error occurred',
-    variant: 'destructive',
-  });
-};
-
 export default function CodeCompiler({
   initialLanguage = "cpp",
   initialCode = codeTemplates.cpp,
@@ -138,230 +80,189 @@ export default function CodeCompiler({
     setMounted(true);
   }, []);
 
-  // Optimize session saving with better debouncing
-  const saveSession = useCallback(
-    (sessionId: string, language: string, code: string, input: string) => {
-      if (isReceivingUpdate.current) return;
+  // Set up Pusher connection for real-time updates
+  useEffect(() => {
+    if (!sessionId || !mounted) return;
 
-      debounce(async () => {
+    const channel = pusherClient.subscribe(`session-${sessionId}`);
+
+    // Send heartbeat every 30 seconds to keep presence active
+    const heartbeatInterval = setInterval(() => {
+      if (document.visibilityState === "visible") {
+        fetch("/api/sessions/presence", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            sessionId,
+            clientId,
+            action: "heartbeat",
+          }),
+        }).catch((error) => console.error("Heartbeat error:", error));
+      }
+    }, 30000); // 30 seconds
+
+    // Announce this client's presence when joining
+    const announcePresence = async () => {
+      try {
+        await fetch("/api/sessions/presence", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            sessionId,
+            clientId,
+            action: "join",
+          }),
+        });
+      } catch (error) {
+        console.error("Error announcing presence:", error);
+      }
+    };
+
+    // Set connected status when subscription succeeds
+    channel.bind("pusher:subscription_succeeded", () => {
+      setIsConnected(true);
+      announcePresence();
+      toast({
+        title: "Connected!",
+        description: "You'll now see real-time updates from other users.",
+      });
+    });
+
+    // Handle connection errors
+    channel.bind("pusher:subscription_error", () => {
+      setIsConnected(false);
+      toast({
+        title: "Connection failed",
+        description: "Could not connect to real-time updates.",
+        variant: "destructive",
+      });
+    });
+
+    // Listen for code updates from other clients
+    channel.bind("code-updated", (data: any) => {
+      // Skip if this update came from the current client
+      if (data.source === clientId) return;
+
+      isReceivingUpdate.current = true;
+
+      // Update local state with the received data
+      setLanguage(data.language);
+      setCode(data.code);
+      setInput(data.input);
+
+      // Set a temporary flag to show the pulse animation
+      setIsUpdating(true);
+
+      // Clear the updating flag after 2 seconds
+      setTimeout(() => {
+        setIsUpdating(false);
+        isReceivingUpdate.current = false;
+      }, 2000);
+    });
+
+    // Listen for user presence updates
+    channel.bind("presence-update", (data: { count: number }) => {
+      setConnectedUsers(data.count);
+    });
+
+    // Handle beforeunload to ensure we announce departure
+    const handleBeforeUnload = () => {
+      fetch("/api/sessions/presence", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sessionId,
+          clientId,
+          action: "leave",
+        }),
+        // Use keepalive to ensure the request completes even if the page is unloading
+        keepalive: true,
+      }).catch((error) => console.error("Error announcing departure:", error));
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    // Also handle visibility change to update presence when tab becomes visible/hidden
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        // Tab is now visible, announce presence
+        announcePresence();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    // Clean up on unmount
+    return () => {
+      clearInterval(heartbeatInterval);
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+
+      // Announce departure
+      fetch("/api/sessions/presence", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sessionId,
+          clientId,
+          action: "leave",
+        }),
+      }).catch((error) => console.error("Error announcing departure:", error));
+
+      pusherClient.unsubscribe(`session-${sessionId}`);
+    };
+  }, [sessionId, mounted, toast, clientId]);
+
+  // Save session state when code, language, or input changes
+  const saveSession = useCallback(
+    debounce(
+      async (
+        sessionId: string,
+        language: string,
+        code: string,
+        input: string
+      ) => {
         try {
+          // Don't save if we're currently receiving an update from another client
+          if (isReceivingUpdate.current) return;
+
           setIsSaving(true);
-          await makeApiRequest(API_ENDPOINTS.SESSIONS, {
-            method: 'PUT',
+          await fetch("/api/sessions", {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+            },
             body: JSON.stringify({
               sessionId,
               language,
               code,
               input,
-              source: clientId,
+              source: clientId, // Include the client ID to identify the source
             }),
           });
         } catch (error) {
-          handleApiError(error, toast);
+          console.error("Error saving session:", error);
+          toast({
+            title: "Failed to save",
+            description: "Your changes couldn't be saved. Please try again.",
+            variant: "destructive",
+          });
         } finally {
           setIsSaving(false);
         }
-      }, DEBOUNCE_DELAY)();
-    },
+      },
+      1000 // Reduced debounce time for more responsive real-time updates
+    ),
     [toast, clientId, debounce]
   );
-
-  // Optimize compile and run function
-  const compileAndRun = async () => {
-    setIsLoading(true);
-    try {
-      const config = languageConfigs[language as keyof typeof languageConfigs];
-      const data = await makeApiRequest<CompileResponse>(API_ENDPOINTS.COMPILE, {
-        method: 'POST',
-        body: JSON.stringify({
-          language: config.language,
-          version: config.version,
-          fileExtension: config.fileExtension,
-          code,
-          stdin: input,
-        }),
-      });
-
-      if (data.compile_error) {
-        setOutput(`Compilation Error:\n${data.compile_error}`);
-      } else if (data.run_error) {
-        setOutput(`Runtime Error:\n${data.run_error}`);
-      } else {
-        setOutput(data.output || 'No output');
-      }
-    } catch (error) {
-      handleApiError(error, toast);
-      setOutput(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Optimize presence handling
-  const handlePresence = async (action: 'join' | 'leave' | 'heartbeat') => {
-    if (!sessionId) return;
-
-    try {
-      await makeApiRequest(API_ENDPOINTS.PRESENCE, {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId,
-          clientId,
-          action,
-        }),
-      });
-    } catch (error) {
-      console.error(`Error handling presence (${action}):`, error);
-    }
-  };
-
-  // Optimize Pusher setup
-  useEffect(() => {
-    if (!sessionId || !mounted) return;
-
-    const channel = pusherClient.subscribe(`session-${sessionId}`);
-    let heartbeatInterval: NodeJS.Timeout;
-
-    const setupPusher = async () => {
-      // Set up heartbeat
-      heartbeatInterval = setInterval(() => {
-        if (document.visibilityState === 'visible') {
-          handlePresence('heartbeat');
-        }
-      }, HEARTBEAT_INTERVAL);
-
-      // Announce presence
-      await handlePresence('join');
-
-      // Set up event listeners
-      channel.bind('pusher:subscription_succeeded', () => {
-        setIsConnected(true);
-        toast({
-          title: 'Connected!',
-          description: "You'll now see real-time updates from other users.",
-        });
-      });
-
-      channel.bind('pusher:subscription_error', () => {
-        setIsConnected(false);
-        toast({
-          title: 'Connection failed',
-          description: 'Could not connect to real-time updates.',
-          variant: 'destructive',
-        });
-      });
-
-      channel.bind('code-updated', (data: CodeUpdateData) => {
-        if (data.source === clientId) return;
-
-        isReceivingUpdate.current = true;
-        setLanguage(data.language);
-        setCode(data.code);
-        setInput(data.input);
-        setIsUpdating(true);
-
-        setTimeout(() => {
-          setIsUpdating(false);
-          isReceivingUpdate.current = false;
-        }, UPDATE_ANIMATION_DURATION);
-      });
-
-      channel.bind('presence-update', (data: PresenceUpdateData) => {
-        setConnectedUsers(data.count);
-      });
-    };
-
-    setupPusher();
-
-    // Cleanup function
-    return () => {
-      clearInterval(heartbeatInterval);
-      handlePresence('leave');
-      pusherClient.unsubscribe(`session-${sessionId}`);
-    };
-  }, [sessionId, mounted, toast, clientId]);
-
-  // Optimize file handling
-  const handleFileUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const fileExtension = file.name.split('.').pop()?.toLowerCase();
-    const extensionToLanguage: Record<string, string> = {
-      cpp: 'cpp', cc: 'cpp', h: 'cpp', hpp: 'cpp',
-      js: 'javascript', mjs: 'javascript',
-      py: 'python',
-      java: 'java',
-      cs: 'csharp',
-      rb: 'ruby',
-      go: 'go',
-      rs: 'rust',
-      php: 'php',
-      sql: 'sql',
-    };
-
-    if (fileExtension && extensionToLanguage[fileExtension]) {
-      setLanguage(extensionToLanguage[fileExtension]);
-    }
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      setCode(e.target?.result as string);
-    };
-    reader.readAsText(file);
-
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  }, []);
-
-  // Optimize file saving
-  const handleFileSave = useCallback(async () => {
-    const config = languageConfigs[language as keyof typeof languageConfigs];
-    const fileExtension = config.fileExtension;
-    const suggestedName = `main.${fileExtension}`;
-
-    try {
-      if ('showSaveFilePicker' in window) {
-        // @ts-ignore
-        const fileHandle = await window.showSaveFilePicker({
-          suggestedName,
-          types: [{
-            description: 'Text Files',
-            accept: { 'text/plain': [`.${fileExtension}`] },
-          }],
-        });
-
-        const writable = await fileHandle.createWritable();
-        await writable.write(code);
-        await writable.close();
-
-        toast({
-          title: 'File saved!',
-          description: 'Your code has been saved successfully.',
-        });
-      } else {
-        const blob = new Blob([code], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = suggestedName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-
-        toast({
-          title: 'File downloaded',
-          description: 'Your code has been downloaded.',
-        });
-      }
-    } catch (error) {
-      if (error instanceof Error && error.name !== 'AbortError') {
-        handleApiError(error, toast);
-      }
-    }
-  }, [code, language, toast]);
 
   // Update session when code, language, or input changes
   useEffect(() => {
@@ -451,6 +352,43 @@ export default function CodeCompiler({
     setOutput("");
   };
 
+  const compileAndRun = async () => {
+    setIsLoading(true);
+    try {
+      const config = languageConfigs[language as keyof typeof languageConfigs];
+
+      const response = await fetch("/api/compile", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          language: config.language,
+          version: config.version,
+          fileExtension: config.fileExtension,
+          code,
+          stdin: input,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.compile_error) {
+        setOutput(`Compilation Error:\n${data.compile_error}`);
+      } else if (data.run_error) {
+        setOutput(`Runtime Error:\n${data.run_error}`);
+      } else {
+        setOutput(data.output || "No output");
+      }
+    } catch (error) {
+      setOutput(
+        `Error: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
       document.documentElement.requestFullscreen().catch((err) => {
@@ -472,6 +410,114 @@ export default function CodeCompiler({
     setOutput("");
     setInput("");
     setIsResetDialogOpen(false);
+  };
+
+  // Handle file upload
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Check file extension and set language if possible
+    const fileName = file.name;
+    const fileExtension = fileName.split(".").pop()?.toLowerCase();
+
+    // Map file extension to language
+    const extensionToLanguage: Record<string, string> = {
+      cpp: "cpp",
+      cc: "cpp",
+      h: "cpp",
+      hpp: "cpp",
+      js: "javascript",
+      mjs: "javascript",
+      py: "python",
+      java: "java",
+      cs: "csharp",
+      rb: "ruby",
+      go: "go",
+      rs: "rust",
+      php: "php",
+      sql: "sql",
+    };
+
+    if (fileExtension && extensionToLanguage[fileExtension]) {
+      setLanguage(extensionToLanguage[fileExtension]);
+    }
+
+    // Read file content
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const content = e.target?.result as string;
+      setCode(content);
+    };
+    reader.readAsText(file);
+
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  // Handle file save
+  const handleFileSave = async () => {
+    const config = languageConfigs[language as keyof typeof languageConfigs];
+    const fileExtension = config.fileExtension;
+    const suggestedName = `main.${fileExtension}`;
+    const content = code;
+
+    // Try to use the File System Access API if available
+    if ("showSaveFilePicker" in window) {
+      try {
+        // @ts-ignore - TypeScript might not recognize showSaveFilePicker
+        const fileHandle = await window.showSaveFilePicker({
+          suggestedName,
+          types: [
+            {
+              description: "Text Files",
+              accept: { "text/plain": [`.${fileExtension}`] },
+            },
+          ],
+        });
+
+        // Create a writable stream and write the content
+        const writable = await fileHandle.createWritable();
+        await writable.write(content);
+        await writable.close();
+
+        toast({
+          title: "File saved!",
+          description: "Your code has been saved successfully.",
+        });
+      } catch (err) {
+        // User cancelled or error occurred
+        if (err instanceof Error && err.name !== "AbortError") {
+          console.error("Error saving file:", err);
+          toast({
+            title: "Save failed",
+            description: "There was an error saving your file.",
+            variant: "destructive",
+          });
+        }
+      }
+    } else {
+      // Fallback for browsers that don't support the File System Access API
+      const blob = new Blob([content], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = suggestedName;
+      document.body.appendChild(a);
+      a.click();
+
+      // Clean up
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast({
+        title: "File downloaded",
+        description: "Your code has been downloaded.",
+      });
+    }
   };
 
   // Share the current session
